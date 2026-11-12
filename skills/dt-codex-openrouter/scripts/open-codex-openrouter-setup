@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# open-codex-openrouter-setup — one-off setup for the dt-codex-openrouter skill.
+#
+#   open-codex-openrouter-setup                 # create the OpenRouter home if missing
+#   open-codex-openrouter-setup --force-config  # re-write its config.toml from the template
+#
+# Idempotent, and never touches ~/.codex/config.toml (the dock icon's backend)
+# beyond checking it. Backs up any file before replacing it.
+set -euo pipefail
+
+# Resolve symlinks so this works when invoked via ~/.local/bin/<name>.
+self="${BASH_SOURCE[0]}"
+while [[ -L "$self" ]]; do
+  target="$(readlink "$self")"
+  case "$target" in
+    /*) self="$target" ;;
+    *)  self="$(dirname "$self")/$target" ;;
+  esac
+done
+SKILL_DIR="$(cd "$(dirname "$self")/.." && pwd)"
+
+DEFAULT_HOME="${DT_CODEX_DEFAULT_HOME:-$HOME/.codex}"
+OPENROUTER_HOME="${DT_CODEX_OPENROUTER_HOME:-$HOME/.codex-openrouter}"
+BIN_DIR="${DT_BIN_DIR:-$HOME/.local/bin}"
+FORCE_CONFIG=0
+[[ "${1:-}" == "--force-config" ]] && FORCE_CONFIG=1
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+
+info() { printf '  %s\n' "$*"; }
+head1() { printf '\n%s\n' "$*"; }
+backup() {
+  [[ -f "$1" ]] || return 0
+  local b="$1.backup-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$1" "$b"; info "backed up $(basename "$1") -> $(basename "$b")"
+}
+
+head1 "OpenRouter Codex home ($OPENROUTER_HOME)"
+mkdir -p "$OPENROUTER_HOME"
+
+if [[ -f "$OPENROUTER_HOME/config.toml" && $FORCE_CONFIG -eq 0 ]]; then
+  info "config.toml already present (use --force-config to rewrite)"
+else
+  backup "$OPENROUTER_HOME/config.toml"
+  cp -p "$SKILL_DIR/assets/openrouter.config.toml" "$OPENROUTER_HOME/config.toml"
+  info "wrote config.toml from the skill template"
+fi
+
+if [[ ! -f "$OPENROUTER_HOME/.env" ]]; then
+  cp -p "$SKILL_DIR/assets/env.template" "$OPENROUTER_HOME/.env"
+  chmod 600 "$OPENROUTER_HOME/.env"
+  printf '\n!! Add your key to %s/.env :\n' "$OPENROUTER_HOME"
+  printf '!!   OPENROUTER_API_KEY=sk-or-v1-...\n'
+else
+  chmod 600 "$OPENROUTER_HOME/.env" 2>/dev/null || true
+  if grep -q '^OPENROUTER_API_KEY=.\+' "$OPENROUTER_HOME/.env"; then
+    info ".env already has an OPENROUTER_API_KEY"
+  else
+    info "!! .env exists but OPENROUTER_API_KEY is empty"
+  fi
+fi
+
+head1 "Launcher"
+mkdir -p "$BIN_DIR"
+ln -sf "$SKILL_DIR/scripts/open-codex-openrouter" "$BIN_DIR/open-codex-openrouter"
+ln -sf "$SKILL_DIR/scripts/open-codex-openrouter-setup" "$BIN_DIR/open-codex-openrouter-setup"
+info "linked $BIN_DIR/open-codex-openrouter and open-codex-openrouter-setup"
+case ":$PATH:" in
+  *":$BIN_DIR:"*) info "$BIN_DIR is on PATH" ;;
+  *) printf '\n!! %s\n' "$BIN_DIR is NOT on PATH. Add to ~/.zshrc:"
+     printf '!!   export PATH="%s:$PATH"\n' "$BIN_DIR" ;;
+esac
+
+head1 "Default Codex (dock icon)"
+def_provider="$(awk -F'=' '/^[[:space:]]*model_provider[[:space:]]*=/{gsub(/[ \t"]/,"",$2); print $2; exit}' "$DEFAULT_HOME/config.toml" 2>/dev/null || true)"
+if [[ "$def_provider" == "openrouter" ]]; then
+  printf '\n!! %s/config.toml is set to OpenRouter — the dock icon would use it.\n' "$DEFAULT_HOME"
+  printf '!! That means a Codex session was run on OpenRouter in the default home and\n'
+  printf '!! the app saved it back. Reset it, e.g.:\n'
+  printf '!!   cp %s/config.toml.DEFAULT %s/config.toml\n' "$DEFAULT_HOME" "$DEFAULT_HOME"
+else
+  info "default home is not pinned to OpenRouter — dock icon OK"
+fi
+
+head1 "Done"
+printf '  open-codex-openrouter --check    # verify config without launching\n'
+printf '  open-codex-openrouter            # open the second desktop window\n'

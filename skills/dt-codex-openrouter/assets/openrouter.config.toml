@@ -1,0 +1,27 @@
+# Codex — OpenRouter backend.
+#
+# Launched with:  dt-codex openrouter      (or: CODEX_HOME=~/.codex-openrouter codex)
+# Secrets live in  ~/.codex-openrouter/.env  ->  OPENROUTER_API_KEY=sk-or-v1-...
+#
+# Change `model` to any OpenRouter model id (e.g. "deepseek/deepseek-v4.1-flash",
+# "anthropic/claude-..."). Get ids from https://openrouter.ai/models
+
+model = "deepseek/deepseek-v4.1-flash"
+model_provider = "openrouter"
+model_reasoning_effort = "high"
+model_verbosity = "low"
+personality = "pragmatic"
+web_search = "live"
+approval_policy = "never"
+approvals_reviewer = "user"
+sandbox_mode = "danger-full-access"
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+wire_api = "responses"
+
+# Reads the key from $CODEX_HOME/.env so the value never sits in config.toml.
+[model_providers.openrouter.auth]
+command = "sh"
+args = [ "-c", "set -a; . \"${CODEX_HOME:-$HOME/.codex}/.env\"; set +a; printf '%s' \"$OPENROUTER_API_KEY\"" ]

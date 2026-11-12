@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# open-codex-openrouter — open a SECOND Codex desktop window on the OpenRouter
+# backend, leaving the normal Codex app (and its icon) on the default backend.
+#
+#   open-codex-openrouter              # open (or focus) the OpenRouter window
+#   open-codex-openrouter --new        # always spawn another window
+#   open-codex-openrouter --project ~/Developer/Github/demianturner/ProjectJournal
+#   open-codex-openrouter --check      # report config/state without launching
+#
+# How it works: the Codex desktop app reads its config from CODEX_HOME
+# (default ~/.codex). Setting CODEX_HOME to a second directory gives a fully
+# independent instance - own config.toml, credentials, sessions, history.
+# A separate Electron profile (--user-data-dir) is required because the app
+# otherwise forwards the launch to the already-running window.
+set -euo pipefail
+
+DEFAULT_HOME="${DT_CODEX_DEFAULT_HOME:-$HOME/.codex}"
+OPENROUTER_HOME="${DT_CODEX_OPENROUTER_HOME:-$HOME/.codex-openrouter}"
+APP_PATH="${DT_CODEX_APP:-/Applications/ChatGPT.app}"
+PROFILE_DIR="${DT_CODEX_OPENROUTER_PROFILE:-$HOME/Library/Application Support/Codex-OpenRouter}"
+
+FORCE_NEW=0
+PROJECT=""
+CHECK_ONLY=0
+
+die() { printf 'open-codex-openrouter: %s\n' "$*" >&2; exit 1; }
+info() { printf '  %s\n' "$*"; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --new) FORCE_NEW=1; shift ;;
+    --check) CHECK_ONLY=1; shift ;;
+    --project) PROJECT="${2:-}"; [[ -n "$PROJECT" ]] || die "--project needs a path"; shift 2 ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown argument '$1' (try --help)" ;;
+  esac
+done
+
+# --- checks -----------------------------------------------------------------
+[[ -d "$APP_PATH" ]] || die "Codex desktop app not found at $APP_PATH (set DT_CODEX_APP)"
+
+problems=0
+if [[ ! -f "$OPENROUTER_HOME/config.toml" ]]; then
+  info "!! $OPENROUTER_HOME/config.toml is missing — run open-codex-openrouter-setup"
+  problems=1
+fi
+if [[ ! -f "$OPENROUTER_HOME/.env" ]]; then
+  info "!! $OPENROUTER_HOME/.env is missing (needs OPENROUTER_API_KEY)"
+  problems=1
+elif ! grep -q '^OPENROUTER_API_KEY=.\+' "$OPENROUTER_HOME/.env"; then
+  info "!! $OPENROUTER_HOME/.env has an empty OPENROUTER_API_KEY"
+  problems=1
+fi
+
+or_model="$(awk -F'=' '/^[[:space:]]*model[[:space:]]*=/{gsub(/[ \t"]/,"",$2); print $2; exit}' "$OPENROUTER_HOME/config.toml" 2>/dev/null || true)"
+or_provider="$(awk -F'=' '/^[[:space:]]*model_provider[[:space:]]*=/{gsub(/[ \t"]/,"",$2); print $2; exit}' "$OPENROUTER_HOME/config.toml" 2>/dev/null || true)"
+def_model="$(awk -F'=' '/^[[:space:]]*model[[:space:]]*=/{gsub(/[ \t"]/,"",$2); print $2; exit}' "$DEFAULT_HOME/config.toml" 2>/dev/null || true)"
+
+printf '\nOpenRouter instance\n'
+info "home      : $OPENROUTER_HOME"
+info "model     : ${or_model:-<unknown>} (${or_provider:-<no provider>})"
+info "profile   : $PROFILE_DIR"
+printf 'Default app (dock icon)\n'
+info "home      : $DEFAULT_HOME"
+info "model     : ${def_model:-<unknown>}"
+
+if [[ "$or_provider" != "openrouter" ]]; then
+  printf '\n!! %s is not configured for OpenRouter (provider=%s).\n' "$OPENROUTER_HOME" "${or_provider:-<none>}"
+  printf '!! Run open-codex-openrouter-setup --force-config to rewrite it.\n'
+  problems=1
+fi
+
+if [[ $problems -ne 0 ]]; then
+  die "fix the problems above first"
+fi
+
+[[ $CHECK_ONLY -eq 1 ]] && exit 0
+
+# --- already running? -------------------------------------------------------
+if [[ $FORCE_NEW -eq 0 ]] && pgrep -f "user-data-dir=$PROFILE_DIR" >/dev/null 2>&1; then
+  existing_pid="$(pgrep -f "user-data-dir=$PROFILE_DIR" | head -1)"
+  printf '\nOpenRouter window is already open — bringing it to the front.\n'
+  osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $existing_pid) to true" 2>/dev/null || true
+  exit 0
+fi
+
+# --- launch -----------------------------------------------------------------
+mkdir -p "$PROFILE_DIR"
+
+args=(--user-data-dir="$PROFILE_DIR")
+if [[ -n "$PROJECT" ]]; then
+  [[ -d "$PROJECT" ]] || die "project folder not found: $PROJECT"
+  PROJECT="$(cd "$PROJECT" && pwd)"
+  args+=("$PROJECT")
+fi
+
+printf '\nOpening a second Codex window on OpenRouter…\n'
+open -n -a "$APP_PATH" --env "CODEX_HOME=$OPENROUTER_HOME" --args "${args[@]}"
+
+# Wait for the backend to come up, then report what we actually got.
+backend=""
+for _ in $(seq 1 30); do
+  sleep 1
+  pgrep -f "user-data-dir=$PROFILE_DIR" >/dev/null 2>&1 || continue
+  while read -r pid; do
+    if ps eww -p "$pid" 2>/dev/null | tr ' ' '\n' | grep -q "^CODEX_HOME=$OPENROUTER_HOME$"; then
+      backend="$pid"
+      break
+    fi
+  done < <(pgrep -f 'codex-cli/CodexCLI.app/Contents/MacOS/codex' || true)
+  [[ -n "${backend:-}" ]] && break
+done
+
+if [[ -n "${backend:-}" ]]; then
+  printf 'OpenRouter window is up (backend pid %s, model %s).\n' "$backend" "${or_model:-unknown}"
+  printf 'The dock icon still opens default Codex.\n'
+else
+  printf 'Launched, but the OpenRouter backend did not report in yet.\n'
+  printf 'Check the new window; if it shows the wrong model, run:\n'
+  printf '  open-codex-openrouter --check\n'
+fi

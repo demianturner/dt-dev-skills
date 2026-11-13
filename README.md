@@ -4,8 +4,6 @@ Various skills I've been working on.
 
 ## Skills
 
-- **download-reddit-saved-posts** — imports Reddit post bookmarks from a Raindrop collection as categorised folders of Markdown notes, with duplicate detection.
-
 - **dt-codex-openrouter** — opens a second Codex desktop window running on the
   OpenRouter API backend, while the normal Codex app (dock icon) stays on its
   default OpenAI config. 

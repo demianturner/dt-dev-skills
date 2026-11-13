@@ -50,6 +50,10 @@ install.sh
   icon. This repo avoids that by keeping OpenRouter in `~/.codex-openrouter`.
 - Secrets live in each home's `.env` (`chmod 600`), never in `config.toml`.
 
+## Other Skills
+- [https://github.com/demianturner/swift-skills]()
+- [https://github.com/demianturner/minknote-skills]()
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

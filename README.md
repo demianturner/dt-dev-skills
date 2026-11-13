@@ -1,13 +1,16 @@
 # dt-dev-skills
 
-Personal Codex skills by Demian Turner. Plain files, no build step — a skill is a
-`SKILL.md` folder plus any scripts it needs.
+Various skills I've been working on.
 
 ## Skills
 
+- **download-reddit-saved-posts** — imports Reddit post bookmarks from a Raindrop collection as categorised folders of Markdown notes, with duplicate detection.
+
 - **dt-codex-openrouter** — opens a second Codex desktop window running on the
   OpenRouter API backend, while the normal Codex app (dock icon) stays on its
-  default OpenAI config. Handles the one-off `CODEX_HOME` setup and the
+  default OpenAI config. 
+  
+  Handles the one-off `CODEX_HOME` setup and the
   diagnosing of a dock icon that has drifted onto OpenRouter.
 
 ## Install
